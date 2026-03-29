@@ -1,4 +1,5 @@
-./diffusion-from-scratch
-./data/*
+diffusion-from-scratch/
+data/
+images/
 .DS_Store
 __pycache__
