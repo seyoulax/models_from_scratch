@@ -2,13 +2,24 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+
+###########################################
+#             Self-Attention              #
+###########################################
+
 class SelfAttention(nn.Module):
     def __init__(self, n_heads : int, embed_dim : int, in_proj_bias=True, out_proj_bias=True):
         super().__init__()
 
+        # combine all Q, K, V matrices into one
         self.in_proj = nn.Linear(embed_dim, 3 * embed_dim, bias=in_proj_bias)
+        # out projection layer
         self.out_proj = nn.Linear(embed_dim, embed_dim, bias=out_proj_bias)
+
+        # number af heads to use in attention
         self.n_heads = n_heads
+
+        # dimension of each head
         self.head_dim = embed_dim // n_heads
 
     def forward(self, x: torch.Tensor, causal_mask=False):
@@ -16,35 +27,52 @@ class SelfAttention(nn.Module):
         input_shape = x.shape
         B, T, C = input_shape
 
+        # these is the intermidiate shape with heads representation
         intermid_shape = (B, T, self.n_heads, self.head_dim)
 
+        # get query, keys and values
         # # x: (B, T, C) -> (B, T, C * 3) -> 3 x (B, T, C)
         q, k, v = self.in_proj(x).chunk(3, dim=-1)
 
+        # reshape them into shape that is fit to head-wise operations
         # (B, T, C) -> (B, T, H, C / H) -> (B, H, T, C / H)
         q = q.view(intermid_shape).transpose(1, 2)
         k = k.view(intermid_shape).transpose(1, 2)
         v = v.view(intermid_shape).transpose(1, 2)
 
+        # getting attention matrix
         wei = q @ k.transpose(-1, -2)
 
+        # if we using causal modelling than apply mask to hide future information
         if causal_mask:
             # upper triangle
             mask = torch.ones_like(wei, dtype=torch.bool).triu(1)
             wei = wei.masked_fill(mask, -torch.inf)
         
+        # Normalizing according to the paper
         wei /= self.head_dim ** 0.5
+
+        # Getting attention weights with softmax
         wei = F.softmax(wei, dim=-1)
 
+        # Getting final token represetation
         # (B, H, T, T) @ (B, H, T, C / H) -> (B, H, T, C / H)
         out = wei @ v
- 
+
+        # Inverse process of reshaping
         # (B, H, T, C / H) - >(B, T, H, C / H)
         out = out.transpose(1, 2)
 
         out = out.reshape(input_shape)
 
         return self.out_proj(out)
+    
+
+
+
+###########################################
+#             Cross-Attention             #
+###########################################
 
 class CrossAttention(nn.Module):
 
